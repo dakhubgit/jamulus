@@ -229,6 +229,7 @@ CServer::CServer ( const int          iNewMaxNumChan,
                    const bool         bNUseMultithreading,
                    const bool         bDisableRecording,
                    const bool         bNDelayPan,
+                   const bool         bForceMonoProcessing,
                    const ELicenceType eNLicenceType ) :
     bUseDoubleSystemFrameSize ( bNUseDoubleSystemFrameSize ),
     bUseMultithreading ( bNUseMultithreading ),
@@ -244,6 +245,7 @@ CServer::CServer ( const int          iNewMaxNumChan,
     bDisableRecording ( bDisableRecording ),
     bAutoRunMinimized ( false ),
     bDelayPan ( bNDelayPan ),
+    bForceMonoProcessing ( bForceMonoProcessing ),
     eLicenceType ( eNLicenceType ),
     bDisconnectAllClientsOnQuit ( bNDisconnectAllClientsOnQuit ),
     pSignalHandler ( CSignalHandler::getSingletonP() )
@@ -265,12 +267,20 @@ CServer::CServer ( const int          iNewMaxNumChan,
         OpusEncoderMono[i]     = opus_custom_encoder_create ( OpusMode[i], 1, &iOpusError );   // mono encoder legacy
         OpusDecoderMono[i]     = opus_custom_decoder_create ( OpusMode[i], 1, &iOpusError );   // mono decoder legacy
         OpusEncoderStereo[i]   = opus_custom_encoder_create ( OpusMode[i], 2, &iOpusError );   // stereo encoder legacy
-        OpusDecoderStereo[i]   = opus_custom_decoder_create ( OpusMode[i], 2, &iOpusError );   // stereo decoder legacy
         Opus64EncoderMono[i]   = opus_custom_encoder_create ( Opus64Mode[i], 1, &iOpusError ); // mono encoder OPUS64
         Opus64DecoderMono[i]   = opus_custom_decoder_create ( Opus64Mode[i], 1, &iOpusError ); // mono decoder OPUS64
         Opus64EncoderStereo[i] = opus_custom_encoder_create ( Opus64Mode[i], 2, &iOpusError ); // stereo encoder OPUS64
-        Opus64DecoderStereo[i] = opus_custom_decoder_create ( Opus64Mode[i], 2, &iOpusError ); // stereo decoder OPUS64
-
+        if ( bForceMonoProcessing )
+        {
+           // We need our own decoder state to match the client,
+           // so we still need separate decoders.  Opus can decode
+           // stereo to mono and downmixes on its own.
+            OpusDecoderStereo[i]   = opus_custom_decoder_create ( OpusMode[i], 1, &iOpusError );   // stereo decoder legacy
+            Opus64DecoderStereo[i] = opus_custom_decoder_create ( Opus64Mode[i], 1, &iOpusError ); // stereo decoder OPUS64
+        } else {
+            OpusDecoderStereo[i]   = opus_custom_decoder_create ( OpusMode[i], 2, &iOpusError );   // stereo decoder legacy
+            Opus64DecoderStereo[i] = opus_custom_decoder_create ( Opus64Mode[i], 2, &iOpusError ); // stereo decoder OPUS64
+        }
         // we require a constant bit rate
         opus_custom_encoder_ctl ( OpusEncoderMono[i], OPUS_SET_VBR ( 0 ) );
         opus_custom_encoder_ctl ( OpusEncoderStereo[i], OPUS_SET_VBR ( 0 ) );
@@ -852,7 +862,8 @@ static CTimingMeas JitterMeas ( 1000, "test2.dat" ); JitterMeas.Measure(); // TE
                 emit AudioFrame ( iCurChanID,
                                   vecChannels[iCurChanID].GetName(),
                                   vecChannels[iCurChanID].GetAddress(),
-                                  vecNumAudioChannels[iChanCnt],
+                                  bForceMonoProcessing ? 1
+                                      : vecNumAudioChannels[iChanCnt],
                                   vecvecsData[iChanCnt] );
             }
 
@@ -943,6 +954,9 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
     vecNumAudioChannels[iChanCnt] = vecChannels[iCurChanID].GetNumAudioChannels();
     vecAudioComprType[iChanCnt]   = vecChannels[iCurChanID].GetAudioCompressionType();
 
+    // Number of input channels for channel iChanCnt
+    int iInChannels = bForceMonoProcessing ? 1 : vecNumAudioChannels[iChanCnt];
+
     // get info about required frame size conversion properties
     vecUseDoubleSysFraSizeConvBuf[iChanCnt] = ( !bUseDoubleSystemFrameSize && ( vecAudioComprType[iChanCnt] == CT_OPUS ) );
 
@@ -958,7 +972,7 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
     // update conversion buffer size (nothing will happen if the size stays the same)
     if ( vecUseDoubleSysFraSizeConvBuf[iChanCnt] )
     {
-        DoubleFrameSizeConvBufIn[iCurChanID].SetBufferSize ( DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES * vecNumAudioChannels[iChanCnt] );
+        DoubleFrameSizeConvBufIn[iCurChanID].SetBufferSize ( DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES * iInChannels );
         DoubleFrameSizeConvBufOut[iCurChanID].SetBufferSize ( DOUBLE_SYSTEM_FRAME_SIZE_SAMPLES * vecNumAudioChannels[iChanCnt] );
     }
 
@@ -1023,7 +1037,7 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
     // is false and the Get() function is not called at all. Therefore if the buffer is not needed
     // we do not spend any time in the function but go directly inside the if condition.
     if ( ( vecUseDoubleSysFraSizeConvBuf[iChanCnt] == 0 ) ||
-         !DoubleFrameSizeConvBufIn[iCurChanID].Get ( vecvecsData[iChanCnt], SYSTEM_FRAME_SIZE_SAMPLES * vecNumAudioChannels[iChanCnt] ) )
+         !DoubleFrameSizeConvBufIn[iCurChanID].Get ( vecvecsData[iChanCnt], SYSTEM_FRAME_SIZE_SAMPLES * iInChannels ) )
     {
         // get current number of OPUS coded bytes
         const int iCeltNumCodedBytes = vecChannels[iCurChanID].GetCeltNumCodedBytes();
@@ -1066,7 +1080,7 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
                 iUnused = opus_custom_decode ( CurOpusDecoder,
                                                pCurCodedData,
                                                iCeltNumCodedBytes,
-                                               &vecvecsData[iChanCnt][iB * SYSTEM_FRAME_SIZE_SAMPLES * vecNumAudioChannels[iChanCnt]],
+                                               &vecvecsData[iChanCnt][iB * SYSTEM_FRAME_SIZE_SAMPLES * iInChannels],
                                                iClientFrameSizeSamples );
             }
         }
@@ -1076,7 +1090,7 @@ void CServer::DecodeReceiveData ( const int iChanCnt, const int iNumClients )
         if ( vecUseDoubleSysFraSizeConvBuf[iChanCnt] != 0 )
         {
             DoubleFrameSizeConvBufIn[iCurChanID].PutAll ( vecvecsData[iChanCnt] );
-            DoubleFrameSizeConvBufIn[iCurChanID].Get ( vecvecsData[iChanCnt], SYSTEM_FRAME_SIZE_SAMPLES * vecNumAudioChannels[iChanCnt] );
+            DoubleFrameSizeConvBufIn[iCurChanID].Get ( vecvecsData[iChanCnt], SYSTEM_FRAME_SIZE_SAMPLES * iInChannels );
         }
     }
 
@@ -1109,7 +1123,7 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
             // if channel gain is 1, avoid multiplication for speed optimization
             if ( fGain == 1.0f )
             {
-                if ( vecNumAudioChannels[j] == 1 )
+                if ( bForceMonoProcessing || vecNumAudioChannels[j] == 1 )
                 {
                     // mono
                     for ( i = 0; i < iServerFrameSizeSamples; i++ )
@@ -1128,7 +1142,7 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
             }
             else
             {
-                if ( vecNumAudioChannels[j] == 1 )
+                if ( bForceMonoProcessing || vecNumAudioChannels[j] == 1 )
                 {
                     // mono
                     for ( i = 0; i < iServerFrameSizeSamples; i++ )
@@ -1183,7 +1197,7 @@ void CServer::MixEncodeTransmitData ( const int iChanCnt, const int iNumClients 
                 iPanDelR = ( iPanDel < 0 ) ? -iPanDel : 0;
             }
 
-            if ( vecNumAudioChannels[j] == 1 )
+            if ( bForceMonoProcessing || vecNumAudioChannels[j] == 1 )
             {
                 // mono: copy same mono data in both out stereo audio channels
                 for ( i = 0, k = 0; i < iServerFrameSizeSamples; i++, k += 2 )
@@ -1720,7 +1734,8 @@ bool CServer::CreateLevelsForAllConChannels ( const int                       iN
             // update and get signal level for meter in dB for each channel
             const double dCurSigLevelForMeterdB = vecChannels[vecChanIDsCurConChan[j]].UpdateAndGetLevelForMeterdB ( vecvecsData[j],
                                                                                                                      iServerFrameSizeSamples,
-                                                                                                                     vecNumAudioChannels[j] > 1 );
+                                                                                                                     !bForceMonoProcessing
+                                                                                                                     && vecNumAudioChannels[j] > 1 );
 
             // map value to integer for transmission via the protocol (4 bit available)
             vecLevelsOut[j] = static_cast<uint16_t> ( std::ceil ( dCurSigLevelForMeterdB ) );

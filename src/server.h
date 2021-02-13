@@ -169,6 +169,7 @@ public:
               const bool         bNUseMultithreading,
               const bool         bDisableRecording,
               const bool         bNDelayPan,
+              const bool         bForceMonoProcessing,
               const ELicenceType eNLicenceType );
 
     virtual ~CServer();
@@ -366,6 +367,9 @@ protected:
 
     // for delay panning
     bool bDelayPan;
+
+    // mono processing
+    bool                       bForceMonoProcessing;
 
     // messaging
     QString      strWelcomeMessage;

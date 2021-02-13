@@ -70,6 +70,7 @@ int main ( int argc, char** argv )
     bool         bDisableRecording           = false;
     bool         bDelayPan                   = false;
     bool         bNoAutoJackConnect          = false;
+    bool         bForceMonoProcessing        = false;
     bool         bUseTranslation             = true;
     bool         bCustomPortNumberGiven      = false;
     int          iNumServerChannels          = DEFAULT_USED_NUM_CHANNELS;
@@ -184,6 +185,18 @@ int main ( int argc, char** argv )
             bNoAutoJackConnect = true;
             qInfo() << "- disable auto Jack connections";
             CommandLineOptions << "--nojackconnect";
+            continue;
+        }
+
+        // Force mono processing in the server ---------------------------------
+        if ( GetFlagArgument ( argv,
+                               i,
+                               "--forcemono", // no short form
+                               "--forcemono" ) )
+        {
+            bForceMonoProcessing = true;
+            qInfo() << "- force mono processing in the server";
+            CommandLineOptions << "--forcemono";
             continue;
         }
 
@@ -656,6 +669,7 @@ int main ( int argc, char** argv )
                              bUseMultithreading,
                              bDisableRecording,
                              bDelayPan,
+                             bForceMonoProcessing,
                              eLicenceType );
 
 #ifndef HEADLESS
@@ -758,6 +772,7 @@ QString UsageArguments ( char** argv )
            "  -P, --delaypan        start with delay panning enabled\n"
            "  -R, --recording       sets directory to contain recorded jams\n"
            "      --norecord        disables recording (when enabled by default by -R)\n"
+           "      --forcemono       force signals to be processed as mono\n"
            "  -s, --server          start server\n"
            "  -T, --multithreading  use multithreading to make better use of\n"
            "                        multi-core CPUs and support more clients\n"
