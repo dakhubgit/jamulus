@@ -70,6 +70,7 @@ int main ( int argc, char** argv )
     bool         bMuteMeInPersonalMix        = false;
     bool         bDisableRecording           = false;
     bool         bNoAutoJackConnect          = false;
+    bool         bForceMonoProcessing        = false;
     bool         bUseTranslation             = true;
     bool         bCustomPortNumberGiven      = false;
     int          iNumServerChannels          = DEFAULT_USED_NUM_CHANNELS;
@@ -225,6 +226,17 @@ int main ( int argc, char** argv )
             continue;
         }
 
+        // Force mono processing in the server ---------------------------------
+        if ( GetFlagArgument ( argv,
+                               i,
+                               "--forcemono", // no short form
+                               "--forcemono" ) )
+        {
+            bForceMonoProcessing = true;
+            qInfo() << "- force mono processing in the server";
+            CommandLineOptions << "--forcemono";
+            continue;
+        }
 
         // Disable translations ------------------------------------------------
         if ( GetFlagArgument ( argv,
@@ -734,6 +746,7 @@ int main ( int argc, char** argv )
                              bUseDoubleSystemFrameSize,
                              bUseMultithreading,
                              bDisableRecording,
+                             bForceMonoProcessing,
                              eLicenceType );
 
 #ifndef HEADLESS
@@ -839,6 +852,7 @@ QString UsageArguments ( char **argv )
         "                        [name];[city];[country as QLocale ID]\n"
         "  -R, --recording       sets directory to contain recorded jams\n"
         "      --norecord        disables recording (when enabled by default by -R)\n"
+        "      --forcemono       force signals to be processed as mono\n"
         "  -s, --server          start server\n"
         "  -T, --multithreading  use multithreading to make better use of\n"
         "                        multi-core CPUs and support more clients\n"

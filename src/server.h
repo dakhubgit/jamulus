@@ -183,6 +183,7 @@ public:
               const bool         bNUseDoubleSystemFrameSize,
               const bool         bNUseMultithreading,
               const bool         bDisableRecording,
+              const bool         bForceMonoProcessing,
               const ELicenceType eNLicenceType );
 
     virtual ~CServer();
@@ -337,6 +338,7 @@ protected:
     QMutex                     Mutex;
     QMutex                     MutexWelcomeMessage;
     bool                       bChannelIsNowDisconnected;
+    bool                       bForceMonoProcessing;
 
     // audio encoder/decoder
     OpusCustomMode*            Opus64Mode[MAX_NUM_CHANNELS];
